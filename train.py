@@ -1,12 +1,15 @@
 from pathlib import Path
-
 import joblib
 import pandas as pd
 from sklearn import datasets
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
+import mlflow
+import mlflow.sklearn
 
+mlflow.set_tracking_uri("file:./mlruns")
+mlflow.set_experiment("iris_experiment")
 
 # Load the Iris dataset
 X, y = datasets.load_iris(return_X_y=True)
@@ -23,22 +26,38 @@ params = {
     "random_state": 8888,
 }
 
-# Train the model
-lr = LogisticRegression(**params)
-print("Training the model...")
-lr.fit(X_train, y_train)
-print("Model trained")
 
-# Predict on the test set
-y_pred = lr.predict(X_test)
+with mlflow.start_run(run_name="iris_model") as run:
+    run_id = run.info.run_id
 
-# Calculate metrics
-accuracy = accuracy_score(y_test, y_pred)
+    # Log parameters
+    mlflow.log_params(params)
 
-print("Accuracy:", accuracy)
+    # Train
+    print("Training model...")
+    model = LogisticRegression(**params)
+    model.fit(X_train, y_train)
+    print("Model trained.")
 
-model_dir = Path("models")
-model_dir.mkdir(parents=True, exist_ok=True)
-model_path = model_dir / "logistic_regression.joblib"
-joblib.dump(lr, model_path)
-print(f"Model saved to {model_path.resolve()}")
+    # Evaluate
+    y_pred = model.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
+    mlflow.log_metric("accuracy", accuracy)
+    print("Accuracy:", accuracy)
+
+    # Save
+    model_dir = Path("models")
+    model_dir.mkdir(parents=True, exist_ok=True)
+    model_path = model_dir / "iris_model.joblib"
+    joblib.dump(model, model_path)
+    mlflow.log_artifact(model_path)
+    print(f"Model saved to {model_path.resolve()}")
+
+
+    mlflow.sklearn.log_model(model, artifact_path="model")
+
+    model_uri = f"runs:/{run_id}/model"
+    model_name = "iris_model"
+
+    result = mlflow.register_model(model_uri, model_name)
+    print(f"Model registered: name={result.name}, version={result.version}")
